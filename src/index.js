@@ -830,7 +830,14 @@ function generateMainHTML(requirePassword) {
           if (requirePassword) showLoginPage();
           return;
         }
-        const files = await res.json();
+        const data = await res.json();
+        
+        if (!Array.isArray(data)) {
+          listEl.innerHTML = '<div class="empty"><div class="empty-icon">❌</div><p>加载失败: ' + (data.error || '未知错误') + '</p></div>';
+          return;
+        }
+        
+        const files = data;
         
         allFolders = new Set();
         files.forEach(file => {
@@ -888,6 +895,11 @@ function generateMainHTML(requirePassword) {
 
     function renderFiles(files) {
       const listEl = document.getElementById('file-list');
+      
+      if (!Array.isArray(files) || files.length === 0) {
+        listEl.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>' + (currentFolder ? '文件夹为空' : '存储桶为空，暂无文件') + '</p></div>';
+        return;
+      }
       
       const currentFolderFiles = [];
       const currentFolderSubfolders = new Set();
