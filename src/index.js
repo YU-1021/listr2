@@ -22,7 +22,7 @@ export default {
 
 async function listFiles(env) {
   try {
-    const listed = await env.MY_BUCKET.list();
+    const listed = await env.files.list();
     const files = listed.objects.map(obj => ({
       key: obj.key,
       size: formatBytes(obj.size),
@@ -40,7 +40,7 @@ async function listFiles(env) {
 
 async function listFilesAPI(env) {
   try {
-    const listed = await env.MY_BUCKET.list();
+    const listed = await env.files.list();
     const files = listed.objects.map(obj => ({
       key: obj.key,
       size: obj.size,
@@ -59,7 +59,7 @@ async function listFilesAPI(env) {
 
 async function downloadFile(env, key) {
   try {
-    const object = await env.MY_BUCKET.get(key);
+    const object = await env.files.get(key);
     if (!object) {
       return new Response('File not found', { status: 404 });
     }
