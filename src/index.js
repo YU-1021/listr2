@@ -45,10 +45,6 @@ export default {
       return withAuth(request, env, () => handleMkdir(request, env));
     }
 
-    if (path === '/api/move') {
-      return withAuth(request, env, () => handleMove(request, env));
-    }
-
     if (path.startsWith('/download/')) {
       const key = decodeURIComponent(path.replace('/download/', ''));
       return downloadFile(env, key);
@@ -272,42 +268,6 @@ async function handleMkdir(request, env) {
   }
 }
 
-async function handleMove(request, env) {
-  try {
-    const data = await request.json();
-    const { keys, targetFolder } = data;
-
-    if (!keys || !Array.isArray(keys) || keys.length === 0) {
-      return new Response(JSON.stringify({ error: '缺少文件列表' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    for (const key of keys) {
-      const object = await env.files.get(key);
-      if (!object) continue;
-
-      const fileName = key.split('/').pop();
-      const newKey = targetFolder ? `${targetFolder}/${fileName}` : fileName;
-
-      if (newKey !== key) {
-        await env.files.put(newKey, object.body);
-        await env.files.delete(key);
-      }
-    }
-
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-}
-
 async function downloadFile(env, key) {
   try {
     const object = await env.files.get(key);
@@ -457,17 +417,9 @@ function generateMainHTML(requirePassword) {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
     }
-    .toolbar-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
     .toolbar-btn.logout {
       background: #e74c3c;
       margin-left: auto;
-    }
-    .toolbar-btn.move {
-      background: #3498db;
     }
     .folder-select {
       padding: 10px 16px;
@@ -476,11 +428,6 @@ function generateMainHTML(requirePassword) {
       font-size: 14px;
       background: white;
       min-width: 200px;
-    }
-    .select-info {
-      color: #666;
-      font-size: 14px;
-      margin-left: 10px;
     }
     table {
       width: 100%;
@@ -497,30 +444,12 @@ function generateMainHTML(requirePassword) {
       color: #333;
     }
     tr:hover { background: #f5f5f5; }
-    tr.selected { background: #e8f4fd; }
     .filename {
       max-width: 400px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       color: #333;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .file-checkbox {
-      width: 18px;
-      height: 18px;
-      cursor: pointer;
-    }
-    .folder-icon { color: #f39c12; }
-    .file-icon { color: #667eea; }
-    .folder-link {
-      color: #333;
-      text-decoration: none;
-    }
-    .folder-link:hover {
-      text-decoration: underline;
     }
     .actions {
       display: flex;
@@ -645,36 +574,6 @@ function generateMainHTML(requirePassword) {
       padding: 40px;
       color: #666;
     }
-    .folder-list {
-      max-height: 300px;
-      overflow-y: auto;
-      border: 1px solid #eee;
-      border-radius: 8px;
-      margin-bottom: 20px;
-    }
-    .folder-item {
-      padding: 12px 16px;
-      cursor: pointer;
-      border-bottom: 1px solid #eee;
-      transition: background 0.2s;
-    }
-    .folder-item:last-child { border-bottom: none; }
-    .folder-item:hover { background: #f5f5f5; }
-    .folder-item.selected { background: #e8f4fd; }
-    .breadcrumb {
-      padding: 10px 20px;
-      background: #f8f9fa;
-      border-bottom: 1px solid #eee;
-      font-size: 14px;
-      color: #666;
-    }
-    .breadcrumb a {
-      color: #667eea;
-      text-decoration: none;
-    }
-    .breadcrumb a:hover {
-      text-decoration: underline;
-    }
     @media (max-width: 768px) {
       .header h1 { font-size: 1.5em; }
       th, td { padding: 12px 10px; font-size: 14px; }
@@ -682,7 +581,6 @@ function generateMainHTML(requirePassword) {
       .toolbar { flex-direction: column; }
       .toolbar-btn { width: 100%; justify-content: center; }
       .toolbar-btn.logout { margin-left: 0; }
-      .select-info { display: none; }
     }
   </style>
 </head>
@@ -700,7 +598,6 @@ function generateMainHTML(requirePassword) {
         <h1>📁 R2 文件管理</h1>
         <p>Cloudflare R2 存储桶文件管理系统</p>
       </div>
-      <div class="breadcrumb" id="breadcrumb"></div>
       <div class="toolbar">
         <select id="folder-select" class="folder-select" onchange="changeFolder()">
           <option value="">根目录</option>
@@ -710,8 +607,6 @@ function generateMainHTML(requirePassword) {
           <input type="file" id="file-input" onchange="uploadFile()" multiple>
         </div>
         <button class="toolbar-btn" onclick="showMkdirModal()">📁 新建文件夹</button>
-        <button id="move-btn" class="toolbar-btn move" onclick="showMoveModal()" disabled>📦 移动选中</button>
-        <span id="select-info" class="select-info"></span>
         <button class="toolbar-btn logout" onclick="logout()">🚪 退出</button>
       </div>
       <div id="file-list"></div>
@@ -740,25 +635,10 @@ function generateMainHTML(requirePassword) {
     </div>
   </div>
 
-  <div id="move-modal" class="modal">
-    <div class="modal-content">
-      <h3 class="modal-title">📦 移动文件</h3>
-      <p style="margin-bottom: 10px; color: #666;">选择目标文件夹：</p>
-      <div id="move-folder-list" class="folder-list"></div>
-      <div class="modal-buttons">
-        <button class="modal-btn cancel" onclick="closeMoveModal()">取消</button>
-        <button class="modal-btn confirm" onclick="confirmMove()">移动</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     let requirePassword = ${requirePassword};
     let currentFolder = '';
     let deleteKey = '';
-    let selectedFiles = new Set();
-    let allFolders = new Set();
-    let moveTarget = '';
 
     async function checkAuth() {
       if (!requirePassword) {
@@ -821,8 +701,6 @@ function generateMainHTML(requirePassword) {
     async function loadFiles() {
       const listEl = document.getElementById('file-list');
       listEl.innerHTML = '<div class="loading">加载中...</div>';
-      selectedFiles.clear();
-      updateSelectInfo();
       
       try {
         const res = await fetch('/api/list');
@@ -832,47 +710,31 @@ function generateMainHTML(requirePassword) {
         }
         const files = await res.json();
         
-        allFolders = new Set();
+        const folders = new Set();
+        const filteredFiles = [];
+        
         files.forEach(file => {
-          if (!file.key.endsWith('/.keep')) {
-            const parts = file.key.split('/');
-            if (parts.length > 1) {
-              allFolders.add(parts[0]);
-            }
+          const parts = file.key.split('/');
+          if (parts.length > 1) {
+            folders.add(parts[0]);
+          }
+          if (!currentFolder || file.key.startsWith(currentFolder + '/')) {
+            filteredFiles.push(file);
           }
         });
         
-        const filteredFiles = files.filter(file => {
-          if (!currentFolder) return true;
-          return file.key.startsWith(currentFolder + '/');
-        });
-        
-        updateFolderSelect();
-        updateBreadcrumb();
+        updateFolderSelect(folders);
         renderFiles(filteredFiles);
       } catch (error) {
         listEl.innerHTML = '<div class="empty"><div class="empty-icon">❌</div><p>加载失败: ' + escapeHtml(error.message) + '</p></div>';
       }
     }
 
-    function updateBreadcrumb() {
-      const el = document.getElementById('breadcrumb');
-      if (!currentFolder) {
-        el.innerHTML = '📁 <a href="javascript:void(0)" onclick="goToFolder(\\'\\')">根目录</a>';
-      } else {
-        el.innerHTML = '📁 <a href="javascript:void(0)" onclick="goToFolder(\\'\\')">根目录</a> / ' + escapeHtml(currentFolder);
-      }
-    }
-
-    function goToFolder(folder) {
-      currentFolder = folder;
-      loadFiles();
-    }
-
-    function updateFolderSelect() {
+    function updateFolderSelect(folders) {
       const select = document.getElementById('folder-select');
+      const currentValue = select.value;
       select.innerHTML = '<option value="">根目录</option>';
-      allFolders.forEach(folder => {
+      folders.forEach(folder => {
         const option = document.createElement('option');
         option.value = folder;
         option.textContent = '📁 ' + folder;
@@ -889,45 +751,22 @@ function generateMainHTML(requirePassword) {
     function renderFiles(files) {
       const listEl = document.getElementById('file-list');
       
-      const currentFolderFiles = [];
-      const currentFolderSubfolders = new Set();
-      
-      files.forEach(file => {
-        if (file.key.endsWith('/.keep')) return;
-        
-        const relativePath = currentFolder ? file.key.slice(currentFolder.length + 1) : file.key;
-        const parts = relativePath.split('/');
-        
-        if (parts.length === 1) {
-          currentFolderFiles.push(file);
-        } else {
-          currentFolderSubfolders.add(parts[0]);
-        }
-      });
-      
-      if (currentFolderFiles.length === 0 && currentFolderSubfolders.size === 0) {
+      if (files.length === 0) {
         listEl.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>' + (currentFolder ? '文件夹为空' : '存储桶为空，暂无文件') + '</p></div>';
         return;
       }
       
-      let html = '<table><thead><tr><th><input type="checkbox" class="file-checkbox" onchange="toggleSelectAll(this)"></th><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody>';
+      const displayFiles = files.filter(f => !f.key.endsWith('/.keep'));
       
-      Array.from(currentFolderSubfolders).sort().forEach(folder => {
-        html += '<tr>' +
-          '<td></td>' +
-          '<td class="filename"><span class="folder-icon">�</span> <a class="folder-link" href="javascript:void(0)" onclick="enterFolder(\\'' + escapeHtml(folder) + '\\')">' + escapeHtml(folder) + '</a></td>' +
-          '<td>-</td>' +
-          '<td>-</td>' +
-          '<td class="actions"></td>' +
-        '</tr>';
-      });
+      if (displayFiles.length === 0) {
+        listEl.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>文件夹为空</p></div>';
+        return;
+      }
       
-      currentFolderFiles.forEach(file => {
-        const relativePath = currentFolder ? file.key.slice(currentFolder.length + 1) : file.key;
-        const isSelected = selectedFiles.has(file.key);
-        html += '<tr class="' + (isSelected ? 'selected' : '') + '">' +
-          '<td><input type="checkbox" class="file-checkbox" ' + (isSelected ? 'checked' : '') + ' onchange="toggleSelect(\\'' + escapeHtml(file.key).replace(/'/g, "\\\\'") + '\\', this)"></td>' +
-          '<td class="filename"><span class="file-icon">📄</span> ' + escapeHtml(relativePath) + '</td>' +
+      const fileList = displayFiles.map(file => {
+        const displayName = currentFolder ? file.key.replace(currentFolder + '/', '') : file.key;
+        return '<tr>' +
+          '<td class="filename">' + escapeHtml(displayName) + '</td>' +
           '<td>' + formatBytes(file.size) + '</td>' +
           '<td>' + new Date(file.uploaded).toLocaleString() + '</td>' +
           '<td class="actions">' +
@@ -935,53 +774,9 @@ function generateMainHTML(requirePassword) {
             '<button class="delete-btn" onclick="showDeleteModal(\\'' + escapeHtml(file.key).replace(/'/g, "\\\\'") + '\\')">删除</button>' +
           '</td>' +
         '</tr>';
-      });
+      }).join('');
       
-      html += '</tbody></table>';
-      listEl.innerHTML = html;
-    }
-
-    function enterFolder(folder) {
-      currentFolder = folder;
-      loadFiles();
-    }
-
-    function toggleSelect(key, checkbox) {
-      if (checkbox.checked) {
-        selectedFiles.add(key);
-      } else {
-        selectedFiles.delete(key);
-      }
-      updateSelectInfo();
-      checkbox.closest('tr').classList.toggle('selected', checkbox.checked);
-    }
-
-    function toggleSelectAll(checkbox) {
-      const checkboxes = document.querySelectorAll('#file-list tbody .file-checkbox');
-      checkboxes.forEach(cb => {
-        const key = cb.getAttribute('onchange').match(/'([^']+)'/)[1];
-        if (checkbox.checked) {
-          selectedFiles.add(key);
-          cb.checked = true;
-        } else {
-          selectedFiles.delete(key);
-          cb.checked = false;
-        }
-        cb.closest('tr').classList.toggle('selected', checkbox.checked);
-      });
-      updateSelectInfo();
-    }
-
-    function updateSelectInfo() {
-      const infoEl = document.getElementById('select-info');
-      const moveBtn = document.getElementById('move-btn');
-      if (selectedFiles.size > 0) {
-        infoEl.textContent = '已选中 ' + selectedFiles.size + ' 个文件';
-        moveBtn.disabled = false;
-      } else {
-        infoEl.textContent = '';
-        moveBtn.disabled = true;
-      }
+      listEl.innerHTML = '<table><thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody>' + fileList + '</tbody></table>';
     }
 
     async function uploadFile() {
@@ -1078,64 +873,6 @@ function generateMainHTML(requirePassword) {
       }
     }
 
-    function showMoveModal() {
-      if (selectedFiles.size === 0) return;
-      moveTarget = '';
-      
-      const listEl = document.getElementById('move-folder-list');
-      let html = '<div class="folder-item selected" onclick="selectMoveTarget(\\'\\')">📁 根目录</div>';
-      
-      allFolders.forEach(folder => {
-        if (folder !== currentFolder) {
-          html += '<div class="folder-item" onclick="selectMoveTarget(\\'' + escapeHtml(folder) + '\\')">📁 ' + escapeHtml(folder) + '</div>';
-        }
-      });
-      
-      listEl.innerHTML = html;
-      document.getElementById('move-modal').classList.add('active');
-    }
-
-    function selectMoveTarget(folder) {
-      moveTarget = folder;
-      const items = document.querySelectorAll('#move-folder-list .folder-item');
-      items.forEach(item => {
-        item.classList.remove('selected');
-      });
-      event.target.classList.add('selected');
-    }
-
-    function closeMoveModal() {
-      document.getElementById('move-modal').classList.remove('active');
-      moveTarget = '';
-    }
-
-    async function confirmMove() {
-      if (selectedFiles.size === 0) {
-        closeMoveModal();
-        return;
-      }
-      
-      try {
-        const res = await fetch('/api/move', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            keys: Array.from(selectedFiles), 
-            targetFolder: moveTarget 
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          closeMoveModal();
-          loadFiles();
-        } else {
-          alert('移动失败: ' + data.error);
-        }
-      } catch (error) {
-        alert('移动失败: ' + error.message);
-      }
-    }
-
     function formatBytes(bytes) {
       if (bytes === 0) return '0 B';
       const k = 1024;
@@ -1145,7 +882,7 @@ function generateMainHTML(requirePassword) {
     }
 
     function escapeHtml(text) {
-      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;" };
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
       return String(text).replace(/[&<>"']/g, m => map[m]);
     }
 
@@ -1153,7 +890,6 @@ function generateMainHTML(requirePassword) {
       if (e.key === 'Escape') {
         closeMkdirModal();
         closeDeleteModal();
-        closeMoveModal();
       }
     });
 
