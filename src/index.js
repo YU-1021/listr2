@@ -25,6 +25,10 @@ export default {
       return handleLogout();
     }
 
+    if (path === '/api/public/list') {
+      return listFilesPublicAPI(env);
+    }
+
     if (path === '/api/list') {
       return withAuth(request, env, () => listFilesAPI(env));
     }
@@ -134,6 +138,31 @@ function handleLogout() {
       'Set-Cookie': 'auth_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0',
     },
   });
+}
+
+async function listFilesPublicAPI(env) {
+  try {
+    const listed = await env.files.list();
+    const files = listed.objects.map(obj => ({
+      key: obj.key,
+      size: obj.size,
+      uploaded: obj.uploaded.toISOString(),
+    }));
+    return new Response(JSON.stringify(files), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
 }
 
 async function listFilesAPI(env) {
